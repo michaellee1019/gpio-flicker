@@ -12,9 +12,20 @@ module.tar.gz: build
 	rm -f $(BIN_OUTPUT_PATH)/module.tar.gz
 	tar czf $(BIN_OUTPUT_PATH)/module.tar.gz $(BIN_OUTPUT_PATH)/gpio-flicker
 
+reload-build:
+	mkdir -p $(BIN_OUTPUT_PATH)
+	rm -f $(BIN_OUTPUT_PATH)/module.tar.gz
+	tar -czf $(BIN_OUTPUT_PATH)/module.tar.gz main.go meta.json reload.sh Makefile models/* go.mod go.sum
+
+reload-setup:
+	test -f go1.23.5.linux-arm64.tar.gz || wget https://go.dev/dl/go1.23.5.linux-arm64.tar.gz
+	sudo tar -C /usr/local -xzf go1.23.5.linux-arm64.tar.gz
+	sudo apt-get install -y apt-utils coreutils tar libnlopt-dev libjpeg-dev pkg-config
+
 setup:
 	if [ "$(UNAME_S)" = "Linux" ]; then \
-		sudo apt-get install -y apt-utils coreutils tar libnlopt-dev libjpeg-dev pkg-config; \
+		sudo apt-get update; \
+		sudo apt-get install -y golang apt-utils coreutils tar libnlopt-dev libjpeg-dev pkg-config; \
 	fi
 	# remove unused imports
 	go install golang.org/x/tools/cmd/goimports@latest

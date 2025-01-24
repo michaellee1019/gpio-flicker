@@ -3,7 +3,10 @@ package models
 import (
 	"context"
 	"errors"
+	"math/rand"
+	"time"
 
+	"go.viam.com/rdk/components/board"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/services/generic"
@@ -24,24 +27,9 @@ func init() {
 }
 
 type Config struct {
-	/*
-		Put config attributes here. There should be public/exported fields
-		with a `json` parameter at the end of each attribute.
-
-		Example config struct:
-			type Config struct {
-				Pin   string `json:"pin"`
-				Board string `json:"board"`
-				MinDeg *float64 `json:"min_angle_deg,omitempty"`
-			}
-
-		If your model does not need a config, replace *Config in the init
-		function with resource.NoNativeConfig
-	*/
-
-	/* Uncomment this if your model does not need to be validated
-	   and has no implicit dependecies. */
-	// resource.TriviallyValidateConfig
+	Board    string   `json:"board"`
+	Pins     []string `json:"pins"`
+	Interval int      `json:"interval_ms"`
 }
 
 // Validate ensures all parts of the config are valid and important fields exist.
@@ -62,8 +50,9 @@ type gpioFlickerGpioFlicker struct {
 	cancelCtx  context.Context
 	cancelFunc func()
 
-	/* Uncomment this if your model does not need to reconfigure. */
-	// resource.TriviallyReconfigurable
+	board    *board.Board
+	pins     []board.GPIOPin
+	interval time.Duration
 
 	// Uncomment this if the model does not have any goroutines that
 	// need to be shut down while closing.
@@ -86,6 +75,7 @@ func newGpioFlickerGpioFlicker(ctx context.Context, deps resource.Dependencies, 
 		cancelCtx:  cancelCtx,
 		cancelFunc: cancelFunc,
 	}
+	s.logger.Info("new")
 	return s, nil
 }
 
@@ -94,8 +84,52 @@ func (s *gpioFlickerGpioFlicker) Name() resource.Name {
 }
 
 func (s *gpioFlickerGpioFlicker) Reconfigure(ctx context.Context, deps resource.Dependencies, conf resource.Config) error {
-	// Put reconfigure code here
-	return errUnimplemented
+	s.logger.Info("reconfiguring")
+
+	brd, err := board.FromDependencies(deps, s.cfg.Board)
+	if err != nil {
+		return err
+	}
+	s.board = &brd
+	s.pins = make([]board.GPIOPin, len(s.cfg.Pins))
+	for i, pin := range s.cfg.Pins {
+		s.pins[i], err = (*s.board).GPIOPinByName(pin)
+		if err != nil {
+			return err
+		}
+	}
+
+	s.interval = time.Duration(s.cfg.Interval) * time.Millisecond
+
+	s.logger.Info("reconfigured")
+
+
+	// Start the flicker routine
+	go func() {
+		ticker := time.NewTicker(s.interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-s.cancelCtx.Done():
+				// Clean up when context is cancelled
+				for _, pin := range s.pins {
+					_ = pin.Set(ctx, false, nil)
+				}
+				return
+			case <-ticker.C:
+				// Randomly select and toggle one pin
+				s.logger.Info("ticked")
+				randomPin := s.pins[rand.Intn(len(s.pins))]
+				currentValue, _ := randomPin.Get(ctx, nil)
+				if err := randomPin.Set(ctx, !currentValue, nil); err != nil {
+					s.logger.Error("Failed to set pin state", "error", err)
+				}
+			}
+		}
+	}()
+
+	return nil
 }
 
 func (s *gpioFlickerGpioFlicker) NewClientFromConn(ctx context.Context, conn rpc.ClientConn, remoteName string, name resource.Name, logger logging.Logger) (resource.Resource, error) {

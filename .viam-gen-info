@@ -1,0 +1,12 @@
+{
+  "module_name": "gpio-flicker",
+  "namespace": "michaellee1019",
+  "language": "go",
+  "resource_type": "service",
+  "resource_subtype": "generic",
+  "model_name": "gpio-flicker",
+  "enable_cloud_build": true,
+  "initialize_git": false,
+  "generator_version": "0.1.0",
+  "generated_on": "2025-01-24T20:05:44.301071Z"
+}
