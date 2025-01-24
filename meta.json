@@ -1,0 +1,24 @@
+{
+  "$schema": "https://dl.viam.dev/module.schema.json",
+  "module_id": "michaellee1019:gpio-flicker",
+  "visibility": "private",
+  "url": "",
+  "description": "Modular generic service: gpio-flicker",
+  "models": [
+    {
+      "api": "rdk:service:generic",
+      "model": "michaellee1019:gpio-flicker:gpio-flicker"
+    }
+  ],
+  "entrypoint": "bin/gpio-flicker",
+  "first_run": "",
+  "build": {
+    "build": "make module.tar.gz",
+    "setup": "make setup",
+    "path": "bin/module.tar.gz",
+    "arch": [
+      "linux/amd64",
+      "linux/arm64"
+    ]
+  }
+}
