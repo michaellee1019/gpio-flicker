@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand"
 	"time"
 
@@ -132,31 +133,57 @@ func (s *gpioFlickerGpioFlicker) Reconfigure(ctx context.Context, deps resource.
 
 	// Start the flicker routine
 	go func() {
+		s.logger.Info("starting Vegas-style flicker")
 		ticker := time.NewTicker(s.interval)
 		defer ticker.Stop()
-
+	
+		// Create a random phase offset for each pin for organic behavior
+		rand.Seed(time.Now().UnixNano())
+		pinPhases := make([]float64, len(s.pins))
+		for i := range pinPhases {
+			pinPhases[i] = rand.Float64() * 2 * 3.14159 // between 0 and 2π
+		}
+	
 		for {
 			select {
 			case <-s.cancelCtx.Done():
-				// Clean up when context is cancelled
-				// Use background context for cleanup to ensure it completes
 				cleanupCtx := context.Background()
 				for _, pin := range s.pins {
 					_ = pin.Set(cleanupCtx, false, nil)
 				}
 				return
-			case <-ticker.C:
-				// Randomly select and toggle one pin
-				s.logger.Info("ticked")
-				randomPin := s.pins[rand.Intn(len(s.pins))]
-
-				currentValue, err := randomPin.Get(s.cancelCtx, nil)
-				if err != nil {
-					s.logger.Error("Failed to get pin state: ", "error", err)
+	
+			case tickTime := <-ticker.C:
+				// Calculate time-based wave flicker probability
+				t := float64(tickTime.UnixNano()) / 1e9 // seconds
+	
+				for i, pin := range s.pins {
+					// Base chance of flickering
+					baseChance := 0.05 // 5%
+	
+					// Add sinusoidal modulation to create a smooth, wavy flicker pattern
+					sinFactor := (1 + math.Sin((t+pinPhases[i])*2)) / 2 // between 0 and 1
+					totalChance := baseChance + sinFactor*0.2 // up to ~25%
+	
+					if rand.Float64() < totalChance {
+						currentValue, err := pin.Get(s.cancelCtx, nil)
+						if err != nil {
+							s.logger.Error("Failed to get pin state: ", "error", err)
+						}
+						if err := pin.Set(s.cancelCtx, !currentValue, nil); err != nil {
+							s.logger.Error("Failed to set pin state: ", "error", err)
+						}
+					}
 				}
-				// Use the cancelCtx instead of the parent ctx
-				if err := randomPin.Set(s.cancelCtx, !currentValue, nil); err != nil {
-					s.logger.Error("Failed to set pin state: ", "error", err)
+	
+				// Occasional sparkle burst (1% chance every tick)
+				if rand.Float64() < 0.01 {
+					s.logger.Info("sparkle burst!")
+					for j := 0; j < rand.Intn(3)+1; j++ { // toggle 1-3 pins quickly
+						randomPin := s.pins[rand.Intn(len(s.pins))]
+						currentValue, _ := randomPin.Get(s.cancelCtx, nil)
+						_ = randomPin.Set(s.cancelCtx, !currentValue, nil)
+					}
 				}
 			}
 		}
