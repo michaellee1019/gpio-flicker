@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/rand"
 	"time"
 
@@ -27,9 +28,13 @@ func init() {
 }
 
 type Config struct {
-	Board    string   `json:"board"`
-	Pins     []string `json:"pins"`
-	Interval int      `json:"interval_ms"`
+	Boards []BoardConfig `json:"boards"`
+	Interval int `json:"interval_ms"`
+}
+
+type BoardConfig struct {
+	Board string `json:"board"`
+	Pins  []string `json:"pins"`
 }
 
 // Validate ensures all parts of the config are valid and important fields exist.
@@ -38,7 +43,16 @@ type Config struct {
 // resource being validated; e.g. "components.0".
 func (cfg *Config) Validate(path string) ([]string, error) {
 	// Add config validation code here
-	return nil, nil
+
+	boardNames := make([]string, len(cfg.Boards))
+	for i, board := range cfg.Boards {
+		if board.Board == "" {
+			return nil, fmt.Errorf("board is required on board number %d", i)
+		}
+		boardNames[i] = board.Board
+	}
+
+	return boardNames, nil
 }
 
 type gpioFlickerGpioFlicker struct {
@@ -50,8 +64,8 @@ type gpioFlickerGpioFlicker struct {
 	cancelCtx  context.Context
 	cancelFunc func()
 
-	board    *board.Board
-	pins     []board.GPIOPin
+	boards []*board.Board
+	pins   []board.GPIOPin
 	interval time.Duration
 
 	// Uncomment this if the model does not have any goroutines that
@@ -68,15 +82,19 @@ func newGpioFlickerGpioFlicker(ctx context.Context, deps resource.Dependencies, 
 
 	cancelCtx, cancelFunc := context.WithCancel(context.Background())
 
-	s := &gpioFlickerGpioFlicker{
+	res := &gpioFlickerGpioFlicker{
 		name:       rawConf.ResourceName(),
 		logger:     logger,
 		cfg:        conf,
 		cancelCtx:  cancelCtx,
 		cancelFunc: cancelFunc,
 	}
-	s.logger.Info("new")
-	return s, nil
+
+	if err := res.Reconfigure(ctx, deps, rawConf); err != nil {
+		return nil, err
+	}
+
+	return res, nil
 }
 
 func (s *gpioFlickerGpioFlicker) Name() resource.Name {
@@ -84,25 +102,33 @@ func (s *gpioFlickerGpioFlicker) Name() resource.Name {
 }
 
 func (s *gpioFlickerGpioFlicker) Reconfigure(ctx context.Context, deps resource.Dependencies, conf resource.Config) error {
-	s.logger.Info("reconfiguring")
+	s.logger.Error("reconfiguring with: ", s.cfg)
 
-	brd, err := board.FromDependencies(deps, s.cfg.Board)
-	if err != nil {
-		return err
-	}
-	s.board = &brd
-	s.pins = make([]board.GPIOPin, len(s.cfg.Pins))
-	for i, pin := range s.cfg.Pins {
-		s.pins[i], err = (*s.board).GPIOPinByName(pin)
+	brds := make([]*board.Board, len(s.cfg.Boards))
+	var pins []board.GPIOPin
+
+	for i, brdConf := range s.cfg.Boards {
+		brd, err := board.FromDependencies(deps, brdConf.Board)
 		if err != nil {
 			return err
 		}
+		brds[i] = &brd
+
+		for _, pinConf := range brdConf.Pins {
+			pin, err := brd.GPIOPinByName(pinConf)
+			if err != nil {
+				return err
+			}
+			pins = append(pins, pin)
+		}
 	}
+
+	s.boards = brds
+	s.pins = pins
 
 	s.interval = time.Duration(s.cfg.Interval) * time.Millisecond
 
 	s.logger.Info("reconfigured")
-
 
 	// Start the flicker routine
 	go func() {
@@ -113,17 +139,24 @@ func (s *gpioFlickerGpioFlicker) Reconfigure(ctx context.Context, deps resource.
 			select {
 			case <-s.cancelCtx.Done():
 				// Clean up when context is cancelled
+				// Use background context for cleanup to ensure it completes
+				cleanupCtx := context.Background()
 				for _, pin := range s.pins {
-					_ = pin.Set(ctx, false, nil)
+					_ = pin.Set(cleanupCtx, false, nil)
 				}
 				return
 			case <-ticker.C:
 				// Randomly select and toggle one pin
 				s.logger.Info("ticked")
 				randomPin := s.pins[rand.Intn(len(s.pins))]
-				currentValue, _ := randomPin.Get(ctx, nil)
-				if err := randomPin.Set(ctx, !currentValue, nil); err != nil {
-					s.logger.Error("Failed to set pin state", "error", err)
+
+				currentValue, err := randomPin.Get(s.cancelCtx, nil)
+				if err != nil {
+					s.logger.Error("Failed to get pin state: ", "error", err)
+				}
+				// Use the cancelCtx instead of the parent ctx
+				if err := randomPin.Set(s.cancelCtx, !currentValue, nil); err != nil {
+					s.logger.Error("Failed to set pin state: ", "error", err)
 				}
 			}
 		}

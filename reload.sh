@@ -3,7 +3,7 @@
 # bash safe mode. look at `set --help` to see what these are doing
 set -euxo pipefail
 
-make reload-setup
+# make reload-setup
 
 /usr/local/go/bin/go mod tidy
 
