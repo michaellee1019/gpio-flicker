@@ -10,10 +10,10 @@
       "model": "michaellee1019:gpio-flicker:gpio-flicker"
     }
   ],
-  "entrypoint": "reload.sh",
+  "entrypoint": "module/bin/gpio-flicker",
   "first_run": "",
   "build": {
-    "build": "make reload-build",
+    "build": "make module.tar.gz",
     "path": "bin/module.tar.gz",
     "arch": [
       "linux/amd64",

@@ -6,11 +6,11 @@ export PATH := ${PATH}:$(GOPATH)
 
 build: format update-rdk
 	rm -f $(BIN_OUTPUT_PATH)/gpio-flicker
-	go build $(LDFLAGS) -o $(BIN_OUTPUT_PATH)/gpio-flicker main.go
+	GOOS=$(VIAM_BUILD_OS) GOARCH=$(VIAM_BUILD_ARCH) go build -o $(BIN_OUTPUT_PATH)/gpio-flicker main.go
 
 module.tar.gz: build
 	rm -f $(BIN_OUTPUT_PATH)/module.tar.gz
-	tar czf $(BIN_OUTPUT_PATH)/module.tar.gz $(BIN_OUTPUT_PATH)/gpio-flicker
+	tar czf $(BIN_OUTPUT_PATH)/module.tar.gz $(BIN_OUTPUT_PATH)/gpio-flicker meta.json
 
 reload-build:
 	mkdir -p $(BIN_OUTPUT_PATH)
@@ -23,14 +23,18 @@ reload-setup:
 	sudo apt-get install -y apt-utils coreutils tar libnlopt-dev libjpeg-dev pkg-config
 
 setup:
-	if [ "$(UNAME_S)" = "Linux" ]; then \
-		sudo apt-get update; \
-		sudo apt-get install -y golang apt-utils coreutils tar libnlopt-dev libjpeg-dev pkg-config; \
+	if [ ! -f .installed ]; then \
+		if [ "$(UNAME_S)" = "Linux" ]; then \
+			sudo apt-get update; \
+			sudo apt-get install -y golang apt-utils coreutils tar libnlopt-dev libjpeg-dev pkg-config; \
+		fi; \
+		# remove unused imports \
+		go install golang.org/x/tools/cmd/goimports@latest; \
+		find . -name '*.go' -exec $(GOPATH)/goimports -w {} +; \
+		touch .installed; \
+	else \
+		echo "Already installed. Delete .installed file to force reinstallation."; \
 	fi
-	# remove unused imports
-	go install golang.org/x/tools/cmd/goimports@latest
-	find . -name '*.go' -exec $(GOPATH)/goimports -w {} +
-
 
 clean:
 	rm -rf $(BIN_OUTPUT_PATH)/gpio-flicker $(BIN_OUTPUT_PATH)/module.tar.gz gpio-flicker

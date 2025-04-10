@@ -29,12 +29,12 @@ func init() {
 }
 
 type Config struct {
-	Boards []BoardConfig `json:"boards"`
-	Interval int `json:"interval_ms"`
+	Boards   []BoardConfig `json:"boards"`
+	Interval int           `json:"interval_ms"`
 }
 
 type BoardConfig struct {
-	Board string `json:"board"`
+	Board string   `json:"board"`
 	Pins  []string `json:"pins"`
 }
 
@@ -65,10 +65,11 @@ type gpioFlickerGpioFlicker struct {
 	cancelCtx  context.Context
 	cancelFunc func()
 
-	boards []*board.Board
-	pins   []board.GPIOPin
+	boards   []*board.Board
+	pins     []board.GPIOPin
 	interval time.Duration
 
+	isRunning bool
 	// Uncomment this if the model does not have any goroutines that
 	// need to be shut down while closing.
 	// resource.TriviallyCloseable
@@ -102,8 +103,13 @@ func (s *gpioFlickerGpioFlicker) Name() resource.Name {
 	return s.name
 }
 
-func (s *gpioFlickerGpioFlicker) Reconfigure(ctx context.Context, deps resource.Dependencies, conf resource.Config) error {
-	s.logger.Error("reconfiguring with: ", s.cfg)
+func (s *gpioFlickerGpioFlicker) Reconfigure(ctx context.Context, deps resource.Dependencies, rawConf resource.Config) error {
+	s.logger.Error("reconfiguring with: ", rawConf)
+	conf, err := resource.NativeConfig[*Config](rawConf)
+	if err != nil {
+		return err
+	}
+	s.cfg = conf
 
 	brds := make([]*board.Board, len(s.cfg.Boards))
 	var pins []board.GPIOPin
@@ -131,19 +137,28 @@ func (s *gpioFlickerGpioFlicker) Reconfigure(ctx context.Context, deps resource.
 
 	s.logger.Info("reconfigured")
 
-	// Start the flicker routine
+	// Start the flicker routine if not already running
+	if !s.isRunning {
+		s.startFlickerRoutine()
+	}
+
+	return nil
+}
+
+func (s *gpioFlickerGpioFlicker) startFlickerRoutine() {
+	s.isRunning = true
 	go func() {
 		s.logger.Info("starting Vegas-style flicker")
 		ticker := time.NewTicker(s.interval)
 		defer ticker.Stop()
-	
+
 		// Create a random phase offset for each pin for organic behavior
 		rand.Seed(time.Now().UnixNano())
 		pinPhases := make([]float64, len(s.pins))
 		for i := range pinPhases {
 			pinPhases[i] = rand.Float64() * 2 * 3.14159 // between 0 and 2π
 		}
-	
+
 		for {
 			select {
 			case <-s.cancelCtx.Done():
@@ -151,20 +166,21 @@ func (s *gpioFlickerGpioFlicker) Reconfigure(ctx context.Context, deps resource.
 				for _, pin := range s.pins {
 					_ = pin.Set(cleanupCtx, false, nil)
 				}
+				s.isRunning = false
 				return
-	
+
 			case tickTime := <-ticker.C:
 				// Calculate time-based wave flicker probability
 				t := float64(tickTime.UnixNano()) / 1e9 // seconds
-	
+
 				for i, pin := range s.pins {
 					// Base chance of flickering
 					baseChance := 0.05 // 5%
-	
+
 					// Add sinusoidal modulation to create a smooth, wavy flicker pattern
 					sinFactor := (1 + math.Sin((t+pinPhases[i])*2)) / 2 // between 0 and 1
-					totalChance := baseChance + sinFactor*0.2 // up to ~25%
-	
+					totalChance := baseChance + sinFactor*0.2           // up to ~25%
+
 					if rand.Float64() < totalChance {
 						currentValue, err := pin.Get(s.cancelCtx, nil)
 						if err != nil {
@@ -175,7 +191,7 @@ func (s *gpioFlickerGpioFlicker) Reconfigure(ctx context.Context, deps resource.
 						}
 					}
 				}
-	
+
 				// Occasional sparkle burst (1% chance every tick)
 				if rand.Float64() < 0.01 {
 					s.logger.Info("sparkle burst!")
@@ -188,8 +204,15 @@ func (s *gpioFlickerGpioFlicker) Reconfigure(ctx context.Context, deps resource.
 			}
 		}
 	}()
+}
 
-	return nil
+func (s *gpioFlickerGpioFlicker) stopFlickerRoutine() {
+	if s.isRunning {
+		s.cancelFunc()
+		// Create a new context for future use
+		s.cancelCtx, s.cancelFunc = context.WithCancel(context.Background())
+		s.isRunning = false
+	}
 }
 
 func (s *gpioFlickerGpioFlicker) NewClientFromConn(ctx context.Context, conn rpc.ClientConn, remoteName string, name resource.Name, logger logging.Logger) (resource.Resource, error) {
@@ -197,7 +220,25 @@ func (s *gpioFlickerGpioFlicker) NewClientFromConn(ctx context.Context, conn rpc
 }
 
 func (s *gpioFlickerGpioFlicker) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
-	panic("not implemented")
+	// Check for start command
+	if startVal, ok := cmd["start"].(bool); ok && startVal {
+		if !s.isRunning {
+			s.startFlickerRoutine()
+			return map[string]interface{}{"status": "flicker started"}, nil
+		}
+		return map[string]interface{}{"status": "flicker already running"}, nil
+	}
+
+	// Check for stop command
+	if stopVal, ok := cmd["stop"].(bool); ok && stopVal {
+		if s.isRunning {
+			s.stopFlickerRoutine()
+			return map[string]interface{}{"status": "flicker stopped"}, nil
+		}
+		return map[string]interface{}{"status": "flicker not running"}, nil
+	}
+
+	return nil, fmt.Errorf("unknown command: %v", cmd)
 }
 
 func (s *gpioFlickerGpioFlicker) Close(context.Context) error {
