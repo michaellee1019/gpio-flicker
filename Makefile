@@ -5,6 +5,13 @@ GOPATH = $(HOME)/go/bin
 export PATH := ${PATH}:$(GOPATH)
 
 build: format update-rdk
+	@if [ -n "$(VIAM_RELOAD)" ]; then \
+		$(MAKE) reload-build; \
+	else \
+		$(MAKE) publish-build; \
+	fi
+
+publish-build:
 	rm -f $(BIN_OUTPUT_PATH)/gpio-flicker
 	GOOS=$(VIAM_BUILD_OS) GOARCH=$(VIAM_BUILD_ARCH) go build -o $(BIN_OUTPUT_PATH)/gpio-flicker main.go
 
