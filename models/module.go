@@ -42,18 +42,18 @@ type BoardConfig struct {
 // Returns implicit dependencies based on the config.
 // The path is the JSON path in your robot's config (not the `Config` struct) to the
 // resource being validated; e.g. "components.0".
-func (cfg *Config) Validate(path string) ([]string, error) {
+func (cfg *Config) Validate(path string) ([]string, []string, error) {
 	// Add config validation code here
 
 	boardNames := make([]string, len(cfg.Boards))
 	for i, board := range cfg.Boards {
 		if board.Board == "" {
-			return nil, fmt.Errorf("board is required on board number %d", i)
+			return nil, nil, fmt.Errorf("board is required on board number %d", i)
 		}
 		boardNames[i] = board.Board
 	}
 
-	return boardNames, nil
+	return boardNames, []string{}, nil
 }
 
 type gpioFlickerGpioFlicker struct {
