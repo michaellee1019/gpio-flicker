@@ -135,7 +135,7 @@ func (s *gpioFlickerGpioFlicker) Reconfigure(ctx context.Context, deps resource.
 
 	s.interval = time.Duration(s.cfg.Interval) * time.Millisecond
 
-	s.logger.Info("reconfigured")
+	s.logger.Debug("reconfigured")
 
 	// Start the flicker routine if not already running
 	if !s.isRunning {
@@ -148,7 +148,7 @@ func (s *gpioFlickerGpioFlicker) Reconfigure(ctx context.Context, deps resource.
 func (s *gpioFlickerGpioFlicker) startFlickerRoutine() {
 	s.isRunning = true
 	go func() {
-		s.logger.Info("starting Vegas-style flicker")
+		s.logger.Debug("starting Vegas-style flicker")
 		ticker := time.NewTicker(s.interval)
 		defer ticker.Stop()
 
@@ -194,7 +194,7 @@ func (s *gpioFlickerGpioFlicker) startFlickerRoutine() {
 
 				// Occasional sparkle burst (1% chance every tick)
 				if rand.Float64() < 0.01 {
-					s.logger.Info("sparkle burst!")
+					s.logger.Debug("sparkle burst!")
 					for j := 0; j < rand.Intn(3)+1; j++ { // toggle 1-3 pins quickly
 						randomPin := s.pins[rand.Intn(len(s.pins))]
 						currentValue, _ := randomPin.Get(s.cancelCtx, nil)

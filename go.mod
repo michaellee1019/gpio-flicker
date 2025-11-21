@@ -3,7 +3,7 @@ module gpio-flicker
 go 1.25.1
 
 require (
-	go.viam.com/rdk v0.102.0
+	go.viam.com/rdk v0.102.1
 	go.viam.com/utils v0.1.176
 )
 

@@ -10,7 +10,7 @@
       "model": "michaellee1019:gpio-flicker:gpio-flicker"
     }
   ],
-  "entrypoint": "module/bin/gpio-flicker",
+  "entrypoint": "bin/gpio-flicker",
   "first_run": "",
   "build": {
     "build": "make module.tar.gz",
